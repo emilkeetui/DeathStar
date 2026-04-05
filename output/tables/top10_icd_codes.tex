@@ -1,0 +1,28 @@
+\begin{table}
+\centering
+\resizebox{\ifdim\width>\linewidth 1\linewidth\else\width\fi}{!}{
+\begin{talltblr}[         %% tabularray outer open
+caption={Top 10 Most Common Diagnosis Codes},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]},
+hline{2}={1-4}{solid, black, 0.05em},
+hline{1}={1-4}{solid, black, 0.08em},
+hline{11}={1-4}{solid, black, 0.08em},
+row{2,4,6,8,10}={}{bg=cededed},
+row{even}={bg=black!5!white},
+}                     %% tabularray inner close
+\tinytableDefineColor{cededed}{HTML}{ededed}
+ICD Code & Description & N & \% of Claims \\
+847.2 & Sprain of lumbar & 1,213,607 & 3.3\% \\
+724.2 & Lumbago & 586,217 & 1.6\% \\
+847.0 & Sprain of neck & 517,946 & 1.4\% \\
+722.10 & Displacement of lumbar intervertebral disc without myelopathy & 475,177 & 1.3\% \\
+840.9 & Sprains and strains of unspecified site of shoulder and upper arm & 470,859 & 1.3\% \\
+S39.012A & Strain of muscle, fascia and tendon of lower back, initial encounter & 442,198 & 1.2\% \\
+S33.5XXD & Sprain of ligaments of lumbar spine, subsequent encounter & 434,629 & 1.2\% \\
+844.9 & Sprains and strains of unspecified site of knee and leg & 370,249 & 1.0\% \\
+M54.5 & Low back pain & 331,104 & 0.9\% \\
+\end{talltblr}
+}
+\end{table}

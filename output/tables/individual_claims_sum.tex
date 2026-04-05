@@ -1,0 +1,29 @@
+\begin{table}
+\centering
+\resizebox{\ifdim\width>\linewidth 1\linewidth\else\width\fi}{!}{
+\begin{talltblr}[         %% tabularray outer open
+caption={Individual claim summary statistics},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]},
+hline{2}={1-8}{solid, black, 0.05em},
+hline{1}={1-8}{solid, black, 0.08em},
+hline{12}={1-8}{solid, black, 0.08em},
+row{2,4,6,8,10}={}{bg=cededed},
+row{even}={bg=black!5!white},
+}                     %% tabularray inner close
+\tinytableDefineColor{cededed}{HTML}{ededed}
+&  & N & Mean & SD & Min & Max & \% \\
+Employee age &  & 38,285,609 & 46.34 & 12.94 & 14.00 & 95.00 &  \\
+Total claim cost (\$) &  & 38,285,609 & 1584.26 & 12847.08 & 0.00 & 1970166.58 &  \\
+Employee gender & Female & 13,214,649 &  &  &  &  & 34.5\% \\
+& Male & 23,677,664 &  &  &  &  & 61.8\% \\
+& Unknown & 1,393,296 &  &  &  &  & 3.6\% \\
+Employee marital status & Married & 2,170,081 &  &  &  &  & 5.7\% \\
+& Separated & 60,231 &  &  &  &  & 0.2\% \\
+& Single & 1,054,263 &  &  &  &  & 2.8\% \\
+& Unknown & 34,678,652 &  &  &  &  & 90.6\% \\
+& Widowed & 322,382 &  &  &  &  & 0.8\% \\
+\end{talltblr}
+}
+\end{table}
