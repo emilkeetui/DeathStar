@@ -44,13 +44,15 @@ deathstar/
 - **Never write to, modify, overwrite, or delete any file in `raw_data/`.**
 - Never run `rm`, `unlink()`, `file.remove()`, or any destructive operation
   targeting `raw_data/`.
-- If a task seems to require modifying raw data, stop and ask for clarification.
 - All cleaning and transformation must write outputs to `data/clean/` or
   `data/intermediate/`.
 
 ### Before any file operation
-- Show the full file path of every file that will be created, modified, or
-  deleted. Wait for confirmation before proceeding.
+- When an intermediate or cleaned data file is needed in another file
+  check that it exists already and do not create the file if it already exists.
+- Only create an intermediate or cleaned data file that already exists if important
+  changes to the build file have been made and subsequent analysis files rely
+  on variables of the structure of the new build file to run.
 - Never overwrite an existing file in `data/clean/` without first confirming
   the user wants to replace it.
 
@@ -74,6 +76,7 @@ wait for the user to approve before executing.
 - Exporting large files to disk
 
 ### How to estimate
+- Install and load any R packages needed to run the scripts without my permission.
 - For R: use a 1% sample (`slice_sample(prop = 0.01)`) to benchmark time,
   then extrapolate. Report: *"This will take approximately X minutes and
   produce a file of approximately Y GB."*
@@ -143,8 +146,6 @@ If any of the following apply, **stop and ask** rather than proceeding:
 
 1. The task requires writing to `raw_data/`
 2. The operation will take >10 minutes or produce >500 MB of output
-3. The task involves dropping observations or filtering in a way that could
-   affect the analysis sample
-4. A file already exists at the output path
+3. A file already exists at the output path
 
 ---

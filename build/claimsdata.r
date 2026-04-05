@@ -3,8 +3,8 @@
 # Purpose: Build CZ x day claims panel matched to BLS employment
 # Inputs:  raw_data/DeathStar health data/ (SV1, SV2 CSVs)
 #          raw_data/bls_data/ (allhlcn xlsx files)
-#          deathstar/commuting-zones-2020.csv
-#          deathstar/ZIP_COUNTY_032020.xlsx
+#          raw_data/admin boundaries/commuting-zones-2020.csv
+#          raw_data/admin boundaries/ZIP_COUNTY_032020.xlsx
 # Outputs: processed_data/intermediate/claimsclean.parquet
 #          processed_data/clean/claimsczpanel.parquet
 # Author: EK  Date: 2026-03-31
@@ -22,11 +22,14 @@ library(stringr)
 
 # ── 1. Geographic crosswalks ──────────────────────────────────────────────────
 
-cnty2cz <- read.csv("C:/Users/emilk/deathstar/commuting-zones-2020.csv",
+cnty2cz <- read.csv("C:/Users/emilk/deathstar/raw_data/admin boundaries/commuting-zones-2020.csv",
                     colClasses = c(FIPStxt = "character"))
 
-zip2cnty <- read_excel("C:/Users/emilk/deathstar/ZIP_COUNTY_032020.xlsx") %>%
-  rename(FIPStxt = COUNTY)
+zip2cnty <- read_excel("C:/Users/emilk/deathstar/raw_data/admin boundaries/ZIP_COUNTY_032020.xlsx") %>%
+  rename(FIPStxt = COUNTY) %>%
+  group_by(ZIP) %>%
+  slice_max(RES_RATIO, n = 1, with_ties = FALSE) %>%
+  ungroup()
 
 geo <- left_join(zip2cnty, cnty2cz, by = "FIPStxt") %>%
   filter(StateName == "Texas") %>%
@@ -47,15 +50,15 @@ keep_cols <- c("Bill.Selection.Date", "Bill.ID",
 
 data_dir <- "C:/Users/emilk/deathstar/raw_data/DeathStar health data/DeathStar health data"
 
-sv2 <- rbind(
-  read.csv(file.path(data_dir, "Institutional_Medical_Billing_Services_(SV2)_Header_Information_-_Historical_20260317.csv")),
-  read.csv(file.path(data_dir, "Institutional_Medical_Billing_Services_(SV2)_Header_Information_20260317.csv"))
-)[, keep_cols]
+sv2 <- bind_rows(
+  read_csv(file.path(data_dir, "Institutional_Medical_Billing_Services_(SV2)_Header_Information_-_Historical_20260317.csv"), show_col_types = FALSE, name_repair = ~ make.names(., unique = TRUE))[, keep_cols],
+  read_csv(file.path(data_dir, "Institutional_Medical_Billing_Services_(SV2)_Header_Information_20260317.csv"), show_col_types = FALSE, name_repair = ~ make.names(., unique = TRUE))[, keep_cols]
+)
 
-sv1 <- rbind(
-  read.csv(file.path(data_dir, "Professional_Medical_Billing_Services_(SV1)_Header_Information_-_Historical_20260317.csv")),
-  read.csv(file.path(data_dir, "Professional_Medical_Billing_Services_(SV1)_Header_Information_20260317.csv"))
-)[, keep_cols]
+sv1 <- bind_rows(
+  read_csv(file.path(data_dir, "Professional_Medical_Billing_Services_(SV1)_Header_Information_-_Historical_20260317.csv"), show_col_types = FALSE, name_repair = ~ make.names(., unique = TRUE))[, keep_cols],
+  read_csv(file.path(data_dir, "Professional_Medical_Billing_Services_(SV1)_Header_Information_20260317.csv"), show_col_types = FALSE, name_repair = ~ make.names(., unique = TRUE))[, keep_cols]
+)
 
 # ── 3. Merge claims to commuting zones ───────────────────────────────────────
 
