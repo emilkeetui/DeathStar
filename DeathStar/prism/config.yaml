@@ -1,0 +1,48 @@
+# config.yaml
+# Shared configuration for Texas CZ Weather workflow
+
+prism:
+  # Local directory where PRISM BIL files are stored
+  data_dir: "Z:/ek559/DeathStar/prism_raw"
+
+  # Variables to extract
+  variables:
+    - ppt       # precipitation (mm)
+    - tmax      # max daily temp (°C)
+    - tmin      # min daily temp (°C)
+    - tmean     # mean daily temp (°C)
+    - tdmean    # mean dew point temp (°C)
+
+  # Date range
+  start_date: "2010-01-01"
+  end_date:   "2026-03-17"
+
+  # Resolution label used in folder names
+  resolution: "25m"
+
+commuting_zones:
+  # Texas FIPS code
+  state_fips: "48"
+
+  # Where to save CZ shapefile
+  shp_dir: "Z:/ek559/DeathStar/intermediate_data/cz_shapefiles"
+
+  # CZ vintage used
+  vintage: 2020
+
+  # Local crosswalk file (county FIPS -> CZ)
+  crosswalk: "Z:/ek559/DeathStar/raw_data/commuting-zones-2020.csv"
+
+  # Local county shapefile directory
+  county_shp: "Z:/ek559/DeathStar/raw_data/admin_boundaries/cb_2024_us_county_500k/cb_2024_us_county_500k.shp"
+
+output:
+  # Intermediate per-year extraction CSVs
+  extracted_dir: "Z:/ek559/DeathStar/intermediate_data/extracted"
+
+  # Final panel dataset
+  panel_csv:     "Z:/ek559/DeathStar/clean_data/tx_cz_daily_weather.csv"
+  panel_parquet: "Z:/ek559/DeathStar/clean_data/tx_cz_daily_weather.parquet"
+
+  # Coordinate reference system for spatial operations
+  crs: "EPSG:4326"

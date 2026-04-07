@@ -92,6 +92,17 @@ wait for the user to approve before executing.
 ### Language & packages
 - **R** or **Python**
 
+Python environment
+There is no system Python on PATH when root directory starts with "Z:/ek559/". 
+When root directory starts with "Z:/ek559/" always use the full path to the project virtualenv:
+```bash
+"Z:/ek559/nys_algal_bloom/NYS algal bloom/code2/Scripts/python.exe" script.py
+# or inline:
+"Z:/ek559/nys_algal_bloom/NYS algal bloom/code2/Scripts/python.exe" -c "..."
+```
+Do not use `python`, `python3`, or `py` — they will not be found.
+
+
 ### Style
 - Snake_case for all object and variable names
 - Every script should have a header block:
