@@ -1,32 +1,31 @@
 """
-04_build_panel.py
+04b_build_county_panel.py
 ===========================================================
-Step 4: Assemble, clean, and validate the final panel dataset.
+Step 4b: Assemble, clean, and validate the county panel dataset.
 
-Reads per-variable per-year CSVs from data/extracted/ and
-merges them into a single long-format panel:
+Reads per-variable per-year CSVs from intermediate_data/extracted_county/
+and merges them into a single long-format panel:
 
-    cz_id | date | ppt | tmax | tmin | tmean | tdmean | vpdmin | vpdmax
+    fips | date | ppt | tmax | tmin | tmean | tdmean
 
 Also adds:
+  - County metadata (name, cz_id, area, centroid)
   - Year, month, day-of-year columns
   - Data quality flags (PRISM stability tier: stable/provisional/early)
+  - Derived humidity variables (rh_mean, vpd_mean) — computed at the
+    county level, before any aggregation (see plan §4.5)
   - Basic descriptive statistics and coverage report
   - Saves as both CSV and Parquet
 
-Output: output/tx_cz_daily_weather.csv (.parquet)
+Output: clean_data/tx_county_daily_weather.csv (.parquet)
 ===========================================================
 """
 
-import os
-import re
-import yaml
 import warnings
 import numpy as np
 import pandas as pd
-import geopandas as gpd
 from pathlib import Path
-from datetime import date, timedelta
+import yaml
 
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
@@ -34,19 +33,19 @@ warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 with open("config.yaml") as f:
     cfg = yaml.safe_load(f)
 
-EXTRACTED_DIR = Path(cfg["output"]["extracted_dir"])
-OUT_CSV       = Path(cfg["output"]["panel_csv"])
-OUT_PARQUET   = Path(cfg["output"]["panel_parquet"])
+EXTRACTED_DIR = Path(cfg["output"]["extracted_county_dir"])
+OUT_CSV       = Path(cfg["output"]["county_panel_csv"])
+OUT_PARQUET   = Path(cfg["output"]["county_panel_parquet"])
 OUT_DIR       = OUT_CSV.parent
 VARIABLES     = cfg["prism"]["variables"]
 START_DATE    = pd.Timestamp(cfg["prism"]["start_date"])
 END_DATE      = pd.Timestamp(cfg["prism"]["end_date"])
-SHP_PATH      = Path(cfg["commuting_zones"]["shp_dir"]) / "tx_commuting_zones_2020.gpkg"
+COUNTY_META   = Path(cfg["output"]["county_meta_csv"])
 
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 print("=" * 55)
-print("  Step 4: Build Final Panel Dataset")
+print("  Step 4b: Build County Panel Dataset")
 print("=" * 55)
 print(f"  Variables : {', '.join(VARIABLES)}")
 print(f"  Date range: {START_DATE.date()} -> {END_DATE.date()}")
@@ -56,7 +55,6 @@ print()
 # ── 1. Load all extracted CSVs ─────────────────────────────
 def load_extracted_data(var: str) -> pd.DataFrame:
     """Load all yearly CSVs for one variable and concatenate."""
-    pattern = EXTRACTED_DIR / f"{var}_*.csv"
     files = sorted(EXTRACTED_DIR.glob(f"{var}_*.csv"))
 
     if not files:
@@ -66,7 +64,7 @@ def load_extracted_data(var: str) -> pd.DataFrame:
     dfs = []
     for f in files:
         try:
-            df = pd.read_csv(f, dtype={"cz_id": str})
+            df = pd.read_csv(f, dtype={"fips": str})
             df["date"] = pd.to_datetime(df["date"])
             dfs.append(df)
         except Exception as e:
@@ -76,7 +74,7 @@ def load_extracted_data(var: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     combined = pd.concat(dfs, ignore_index=True)
-    combined = combined.sort_values(["cz_id", "date"]).reset_index(drop=True)
+    combined = combined.sort_values(["fips", "date"]).reset_index(drop=True)
     print(f"  [{var}] Loaded {len(combined):,} rows from {len(files)} files")
     return combined
 
@@ -85,7 +83,7 @@ def load_extracted_data(var: str) -> pd.DataFrame:
 def merge_variables(variables: list) -> pd.DataFrame:
     """
     Merge variable-specific DataFrames into one wide panel.
-    Join key: (cz_id, date)
+    Join key: (fips, date)
     """
     print("\n  Merging variables...")
     panel = None
@@ -95,44 +93,46 @@ def merge_variables(variables: list) -> pd.DataFrame:
         if df.empty:
             continue
 
-        # Ensure expected columns
         if var not in df.columns:
             print(f"  Skipping {var}: column '{var}' not found")
             continue
 
-        df = df[["cz_id", "date", var]].copy()
+        df = df[["fips", "date", var]].copy()
 
         if panel is None:
             panel = df
         else:
-            panel = panel.merge(df, on=["cz_id", "date"], how="outer")
+            panel = panel.merge(df, on=["fips", "date"], how="outer")
 
     if panel is None or panel.empty:
-        raise ValueError("No data loaded. Run 03_extract_cz_weather.R first.")
+        raise ValueError("No data loaded. Run 03b_extract_county_weather.R first.")
 
     return panel
 
 
-# ── 3. Create complete date-CZ skeleton ───────────────────
-def create_skeleton(panel: pd.DataFrame) -> pd.DataFrame:
+# ── 3. Create complete fips × date skeleton ────────────────
+def create_skeleton(panel: pd.DataFrame, all_fips) -> pd.DataFrame:
     """
-    Ensure every CZ × date combination exists in the panel,
+    Ensure every county × date combination exists in the panel,
     even if all weather values are missing (flags data gaps).
+    Uses the full 254-county list from county_meta.csv, not just
+    the counties present in the extracted data, so a raster that
+    is missing for a whole county-year still surfaces as NA rows
+    rather than silently vanishing.
     """
     all_dates = pd.date_range(START_DATE, END_DATE, freq="D")
-    all_czs   = panel["cz_id"].unique()
 
     skeleton = pd.MultiIndex.from_product(
-        [all_czs, all_dates],
-        names=["cz_id", "date"]
+        [all_fips, all_dates],
+        names=["fips", "date"]
     ).to_frame(index=False)
 
-    complete = skeleton.merge(panel, on=["cz_id", "date"], how="left")
+    complete = skeleton.merge(panel, on=["fips", "date"], how="left")
     n_orig = len(panel)
     n_full = len(complete)
 
     if n_full > n_orig:
-        print(f"\n  Note: Skeleton added {n_full - n_orig:,} missing CZ-day rows")
+        print(f"\n  Note: Skeleton added {n_full - n_orig:,} missing county-day rows")
 
     return complete
 
@@ -174,30 +174,51 @@ def add_stability_flags(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ── 6. Merge in CZ metadata ───────────────────────────────
-def merge_cz_metadata(df: pd.DataFrame) -> pd.DataFrame:
-    """Add CZ area and centroid from the shapefile."""
-    if not SHP_PATH.exists():
-        print("  Shapefile not found; skipping CZ metadata merge.")
-        return df
+# ── 6. Merge in county metadata ────────────────────────────
+def merge_county_metadata(df: pd.DataFrame) -> pd.DataFrame:
+    """Add county name, cz_id, area, and centroid from county_meta.csv."""
+    if not COUNTY_META.exists():
+        raise FileNotFoundError(
+            f"{COUNTY_META} not found. Run 02b_get_counties.py first."
+        )
 
-    cz_meta = gpd.read_file(SHP_PATH)[["cz_id", "area_km2",
-                                        "centroid_lon", "centroid_lat"]]
-    cz_meta["cz_id"] = cz_meta["cz_id"].astype(str)
-    df["cz_id"] = df["cz_id"].astype(str)
+    meta = pd.read_csv(COUNTY_META, dtype={"fips": str, "cz_id": str})
+    df["fips"] = df["fips"].astype(str)
 
-    return df.merge(cz_meta, on="cz_id", how="left")
+    return df.merge(meta, on="fips", how="left")
 
 
-# ── 7. Unit conversions / sanity checks ───────────────────
+# ── 7. Derived humidity variables (§4.5) ───────────────────
+# Computed at the county level, before aggregation to CZ, to avoid
+# Jensen's-inequality bias from deriving nonlinear quantities post-average.
+def es(temp_c):
+    """Saturation vapor pressure (Magnus / August-Roche-Magnus), kPa."""
+    return 0.6108 * np.exp(17.27 * temp_c / (temp_c + 237.3))
+
+
+def add_humidity_variables(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    ea = es(df["tdmean"])          # actual vapor pressure
+    es_tmean = es(df["tmean"])     # saturation vapor pressure at tmean
+
+    rh = 100 * ea / es_tmean
+    df["rh_mean"] = rh.clip(lower=0, upper=100)
+
+    vpd = es_tmean - ea
+    df["vpd_mean"] = vpd.clip(lower=0)
+
+    return df
+
+
+# ── 8. Unit conversions / sanity checks ───────────────────
 REASONABLE_RANGES = {
-    "ppt"    : (-0.1, 800),    # mm/day (up to ~30 in/day for extreme TX events)
-    "tmax"   : (-30,  55),     # °C
-    "tmin"   : (-35,  40),     # °C
-    "tmean"  : (-30,  50),     # °C
-    "tdmean" : (-40,  35),     # °C
-    "vpdmin" : (0,    10),     # hPa
-    "vpdmax" : (0,    80),     # hPa
+    "ppt"      : (-0.1, 800),    # mm/day (up to ~30 in/day for extreme TX events)
+    "tmax"     : (-30,  55),     # °C
+    "tmin"     : (-35,  40),     # °C
+    "tmean"    : (-30,  50),     # °C
+    "tdmean"   : (-40,  35),     # °C
+    "rh_mean"  : (0,    100),    # %
+    "vpd_mean" : (0,    10),     # kPa
 }
 
 def flag_outliers(df: pd.DataFrame) -> pd.DataFrame:
@@ -214,64 +235,79 @@ def flag_outliers(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ── 8. Coverage report ─────────────────────────────────────
+# ── 9. Coverage report ─────────────────────────────────────
 def print_coverage_report(df: pd.DataFrame):
     print("\n" + "="*55)
     print("  Coverage Report")
     print("="*55)
-    print(f"  Total CZ-day rows : {len(df):,}")
-    print(f"  Unique CZs        : {df['cz_id'].nunique()}")
-    print(f"  Date range        : {df['date'].min().date()} -> {df['date'].max().date()}")
-    print(f"  Calendar days     : {(df['date'].max() - df['date'].min()).days + 1:,}")
+    print(f"  Total county-day rows : {len(df):,}")
+    print(f"  Unique counties       : {df['fips'].nunique()}")
+    print(f"  Date range            : {df['date'].min().date()} -> {df['date'].max().date()}")
+    print(f"  Calendar days         : {(df['date'].max() - df['date'].min()).days + 1:,}")
     print()
 
-    for var in VARIABLES:
+    report_vars = VARIABLES + ["rh_mean", "vpd_mean"]
+    for var in report_vars:
         if var not in df.columns:
             continue
         n_valid   = df[var].notna().sum()
         n_total   = len(df)
         pct_valid = 100 * n_valid / n_total
         mean_val  = df[var].mean()
-        print(f"  {var:8s}: {pct_valid:5.1f}% valid  (mean={mean_val:.2f})")
+        print(f"  {var:10s}: {pct_valid:5.1f}% valid  (mean={mean_val:.2f})")
 
     stability_counts = df["prism_stability"].value_counts()
     print()
     print(f"  PRISM stability:")
     for tier, cnt in stability_counts.items():
-        print(f"    {tier:12s}: {cnt:,} CZ-days")
+        print(f"    {tier:12s}: {cnt:,} county-days")
 
 
-# ── 9. Main ───────────────────────────────────────────────
+# ── 10. Main ─────────────────────────────────────────────
 if __name__ == "__main__":
+
+    # County list comes from metadata (authoritative 254), not from
+    # whatever fips values happen to appear in the extracted CSVs.
+    county_meta_full = pd.read_csv(COUNTY_META, dtype={"fips": str})
+    all_fips = sorted(county_meta_full["fips"].unique())
+    assert len(all_fips) == 254, f"Expected 254 counties in county_meta.csv, found {len(all_fips)}"
 
     # Load and merge
     panel = merge_variables(VARIABLES)
     print(f"\n  Merged panel: {len(panel):,} rows, {panel.shape[1]} columns")
 
     # Complete skeleton
-    panel = create_skeleton(panel)
+    panel = create_skeleton(panel, all_fips)
 
     # Feature engineering
     panel = add_temporal_features(panel)
     panel = add_stability_flags(panel)
-    panel = merge_cz_metadata(panel)
+    panel = merge_county_metadata(panel)
+    panel = add_humidity_variables(panel)
 
     # Quality checks
     panel = flag_outliers(panel)
 
     # Column order
-    id_cols   = ["cz_id", "date", "year", "month", "day", "doy", "week", "quarter"]
-    meta_cols = ["centroid_lon", "centroid_lat", "area_km2"]
-    flag_cols = ["prism_stability"]
+    id_cols   = ["fips", "county_name", "date", "year", "month", "day", "doy", "week", "quarter"]
     var_cols  = [v for v in VARIABLES if v in panel.columns]
+    humidity_cols = ["rh_mean", "vpd_mean"]
+    meta_cols = ["cz_id", "cz_name", "area_km2", "centroid_lon", "centroid_lat", "geo_vintage"]
+    flag_cols = ["prism_stability"]
     other_cols = [c for c in panel.columns
-                  if c not in id_cols + meta_cols + flag_cols + var_cols]
+                  if c not in id_cols + var_cols + humidity_cols + meta_cols + flag_cols]
 
-    final_cols = id_cols + var_cols + meta_cols + flag_cols + other_cols
+    final_cols = id_cols + var_cols + humidity_cols + meta_cols + flag_cols + other_cols
     panel = panel[[c for c in final_cols if c in panel.columns]]
 
     # Sort
-    panel = panel.sort_values(["cz_id", "date"]).reset_index(drop=True)
+    panel = panel.sort_values(["fips", "date"]).reset_index(drop=True)
+
+    # §6.4-style tripwire before writing
+    n_fips  = panel["fips"].nunique()
+    n_dates = panel["date"].nunique()
+    assert n_fips == 254, f"Expected 254 counties in final panel, found {n_fips}"
+    assert not panel.duplicated(subset=["fips", "date"]).any(), "Duplicate (fips, date) rows found"
 
     # Report
     print_coverage_report(panel)
@@ -289,7 +325,7 @@ if __name__ == "__main__":
     print(f"    CSV     : {mb_csv:.1f} MB")
     print(f"    Parquet : {mb_parquet:.1f} MB  ({100*(1-mb_parquet/mb_csv):.0f}% smaller)")
 
-    print("\nPanel dataset complete.")
+    print("\nCounty panel dataset complete.")
     print(f"  Final shape: {panel.shape[0]:,} rows × {panel.shape[1]} columns")
     print(f"\n  Sample (first 5 rows):")
     print(panel.head().to_string(index=False))

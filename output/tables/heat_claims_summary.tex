@@ -1,0 +1,27 @@
+\begin{table}
+\centering
+\resizebox{\ifdim\width>\linewidth 1\linewidth\else\width\fi}{!}{
+\begin{talltblr}[         %% tabularray outer open
+caption={Heat-related workers' compensation claims summary statistics. Total claim and heat claim counts cover the full sample period. Mean statistics exclude 2020--2021 to avoid COVID-period distortion.},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]},
+hline{2}={1-2}{solid, black, 0.05em},
+hline{1}={1-2}{solid, black, 0.08em},
+hline{10}={1-2}{solid, black, 0.08em},
+row{2,4,6,8}={}{bg=cededed},
+row{even}={bg=black!5!white},
+}                     %% tabularray inner close
+\tinytableDefineColor{cededed}{HTML}{ededed}
+Statistic & Value \\
+Total claims (entire period) & 38,285,609 \\
+Heat-related claims (any diagnosis position) & 52,428 (0.14\%) \\
+Claims in Austin and Dallas commuting zones & 9,575,702 (25.01\%) \\
+Mean claims per day & 6924.7 \\
+Mean claims per month & 210348.4 \\
+Mean daily claims --- summer (June--August) & 7029.3 \\
+Mean daily claims --- non-summer (Sep--May) & 6890.0 \\
+Summer to non-summer ratio & 1.02 \\
+\end{talltblr}
+}
+\end{table}

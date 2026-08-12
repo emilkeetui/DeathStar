@@ -1,0 +1,655 @@
+---
+title: "20260810_PRISM 2024 max HI Dalio"
+author: "Arnab Ghosh"
+date: "2026-08-10"
+output: html_document
+---
+# Extracting data from PRISM (NY, CT, and NJ ZCTAs in 2024)
+
+# You would want to change the following:
+lines 44
+
+```{r}
+# ===========================================================
+# 1. Packages
+# ===========================================================
+
+library(terra)
+library(sf)
+library(tigris)
+library(exactextractr)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(weathermetrics)
+
+options(tigris_use_cache = TRUE)
+
+
+# ===========================================================
+# 2. User settings
+# ===========================================================
+
+raster_dir <- "C:/Users/akg9010/Desktop/rasters"
+
+dir.create(
+  raster_dir,
+  showWarnings = FALSE
+)
+
+# Year(s) to process
+years <- 2024
+
+# States to include (two-letter USPS abbreviations)
+states_of_interest <- c(
+  "NY",
+  "CT",
+  "NJ"
+)
+
+
+# ===========================================================
+# 3. Download GridMET files
+# ===========================================================
+
+download_gridmet <- function(variable, year) {
+  
+  outfile <- file.path(
+    raster_dir,
+    paste0(
+      variable,
+      "_",
+      year,
+      ".nc"
+    )
+  )
+  
+  if (!file.exists(outfile)) {
+    
+    message(
+      "Downloading ",
+      variable,
+      " ",
+      year
+    )
+    
+    download.file(
+      url = paste0(
+        "https://www.northwestknowledge.net/metdata/data/",
+        variable,
+        "_",
+        year,
+        ".nc"
+      ),
+      destfile = outfile,
+      mode = "wb"
+    )
+    
+  } else {
+    
+    message(
+      "File already exists: ",
+      outfile
+    )
+    
+  }
+}
+
+
+# Download maximum temperature
+walk(
+  years,
+  ~download_gridmet(
+    "tmmx",
+    .x
+  )
+)
+
+
+# Download maximum relative humidity
+walk(
+  years,
+  ~download_gridmet(
+    "rmax",
+    .x
+  )
+)
+
+
+# ===========================================================
+# 4. Load ALL US ZCTAs
+# ===========================================================
+
+message(
+  "Loading 2020 US ZCTAs..."
+)
+
+zcta_all <- zctas(
+  year = 2020
+) %>%
+  st_transform(4326)
+
+
+# ===========================================================
+# 5. Load state boundaries for states of interest
+# ===========================================================
+
+message(
+  "Loading state boundaries for: ",
+  paste(
+    states_of_interest,
+    collapse = ", "
+  )
+)
+
+states_boundary <- states(
+  cb = FALSE,
+  year = 2020
+) %>%
+  filter(
+    STUSPS %in% states_of_interest
+  ) %>%
+  st_transform(4326)
+
+
+# ===========================================================
+# 6. Identify ZCTAs that fall within the states of interest
+# ===========================================================
+
+message(
+  "Identifying ZCTAs within states of interest..."
+)
+
+# Use a representative point within each ZCTA (rather than the
+# true centroid, which can fall outside oddly-shaped polygons)
+# so each ZCTA is assigned to exactly one state.
+
+zcta_points <- st_point_on_surface(
+  zcta_all
+)
+
+zcta_points_joined <- st_join(
+  zcta_points,
+  states_boundary["STUSPS"],
+  join = st_within
+)
+
+zcta_state_lookup <- zcta_points_joined %>%
+  st_drop_geometry() %>%
+  filter(
+    !is.na(STUSPS)
+  ) %>%
+  select(
+    ZCTA5CE20,
+    STUSPS
+  )
+
+
+# ===========================================================
+# 7. Select requested ZCTAs (with polygon geometry retained)
+# ===========================================================
+
+target_zcta <- zcta_all %>%
+  filter(
+    ZCTA5CE20 %in% zcta_state_lookup$ZCTA5CE20
+  ) %>%
+  left_join(
+    zcta_state_lookup,
+    by = "ZCTA5CE20"
+  )
+
+target_zctas <- as.character(
+  target_zcta$ZCTA5CE20
+)
+
+
+# ===========================================================
+# 8. Clean ZCTA geometries
+# ===========================================================
+
+message(
+  "Cleaning ZCTA geometries..."
+)
+
+target_zcta <- st_make_valid(
+  target_zcta
+)
+
+
+# Keep polygon and multipolygon geometries only
+
+target_zcta <- target_zcta[
+  st_geometry_type(target_zcta) %in%
+    c(
+      "POLYGON",
+      "MULTIPOLYGON"
+    ),
+]
+
+
+# ===========================================================
+# 9. Summarize selected ZCTAs
+# ===========================================================
+
+found_zctas <- sort(
+  unique(
+    as.character(
+      target_zcta$ZCTA5CE20
+    )
+  )
+)
+
+message(
+  "Number of ZCTAs selected: ",
+  length(found_zctas)
+)
+
+message(
+  "ZCTAs per state:"
+)
+
+print(
+  target_zcta %>%
+    st_drop_geometry() %>%
+    count(
+      STUSPS,
+      name = "n_zctas"
+    ) %>%
+    arrange(
+      STUSPS
+    )
+)
+
+# Lookup table of ZCTA -> state, to attach to the final output
+zcta_state_lookup_final <- target_zcta %>%
+  st_drop_geometry() %>%
+  select(
+    ZCTA = ZCTA5CE20,
+    STATE = STUSPS
+  ) %>%
+  mutate(
+    ZCTA = as.character(ZCTA)
+  )
+
+
+# ===========================================================
+# 10. Function to process one year
+# ===========================================================
+
+process_year <- function(year) {
+  
+  message(
+    "=========================================="
+  )
+  
+  message(
+    "Processing year ",
+    year
+  )
+  
+  message(
+    "=========================================="
+  )
+  
+  
+  # =========================================================
+  # Load maximum temperature raster
+  # =========================================================
+  
+  message(
+    "Loading temperature raster..."
+  )
+  
+  tmax <- rast(
+    file.path(
+      raster_dir,
+      paste0(
+        "tmmx_",
+        year,
+        ".nc"
+      )
+    )
+  )
+  
+  
+  # =========================================================
+  # Load relative humidity raster
+  # =========================================================
+  
+  message(
+    "Loading humidity raster..."
+  )
+  
+  rh <- rast(
+    file.path(
+      raster_dir,
+      paste0(
+        "rmax_",
+        year,
+        ".nc"
+      )
+    )
+  )
+  
+  
+  # =========================================================
+  # Extract mean daily maximum temperature
+  # =========================================================
+  
+  message(
+    "Extracting daily maximum temperature..."
+  )
+  
+  tmax_extract <- exact_extract(
+    tmax,
+    target_zcta,
+    "mean",
+    progress = TRUE
+  )
+  
+  
+  # =========================================================
+  # Extract mean daily maximum relative humidity
+  # =========================================================
+  
+  message(
+    "Extracting daily maximum relative humidity..."
+  )
+  
+  rh_extract <- exact_extract(
+    rh,
+    target_zcta,
+    "mean",
+    progress = TRUE
+  )
+  
+  
+  # =========================================================
+  # Convert extraction results to data frames
+  # =========================================================
+  
+  tmax_extract <- as.data.frame(
+    tmax_extract
+  )
+  
+  rh_extract <- as.data.frame(
+    rh_extract
+  )
+  
+  
+  # =========================================================
+  # Rename raster layers
+  # =========================================================
+  
+  names(tmax_extract) <-
+    paste0(
+      "day_",
+      seq_len(
+        ncol(tmax_extract)
+      )
+    )
+  
+  names(rh_extract) <-
+    paste0(
+      "day_",
+      seq_len(
+        ncol(rh_extract)
+      )
+    )
+  
+  
+  # =========================================================
+  # Add ZCTA
+  # =========================================================
+  
+  tmax_extract$ZCTA <-
+    as.character(
+      target_zcta$ZCTA5CE20
+    )
+  
+  rh_extract$ZCTA <-
+    as.character(
+      target_zcta$ZCTA5CE20
+    )
+  
+  
+  # =========================================================
+  # Long format temperature
+  # =========================================================
+  
+  tmax_long <-
+    tmax_extract %>%
+    pivot_longer(
+      cols = starts_with("day_"),
+      names_to = "day",
+      values_to = "tmax_k"
+    )
+  
+  
+  # =========================================================
+  # Long format humidity
+  # =========================================================
+  
+  rh_long <-
+    rh_extract %>%
+    pivot_longer(
+      cols = starts_with("day_"),
+      names_to = "day",
+      values_to = "rh"
+    )
+  
+  
+  # =========================================================
+  # Combine temperature and humidity
+  # =========================================================
+  
+  output <-
+    left_join(
+      tmax_long,
+      rh_long,
+      by = c(
+        "ZCTA",
+        "day"
+      )
+    ) %>%
+    
+    mutate(
+      
+      # -----------------------------------------------------
+      # Convert day_1, day_2, etc. to day number
+      # -----------------------------------------------------
+      
+      day =
+        as.integer(
+          gsub(
+            "day_",
+            "",
+            day
+          )
+        ),
+      
+      
+      # -----------------------------------------------------
+      # Create calendar date
+      # -----------------------------------------------------
+      
+      date =
+        as.Date(
+          paste0(
+            year,
+            "-01-01"
+          )
+        ) +
+        day - 1,
+      
+      
+      # -----------------------------------------------------
+      # GridMET tmmx is in Kelvin
+      # Convert Kelvin to Celsius
+      # -----------------------------------------------------
+      
+      tmax_c =
+        tmax_k - 273.15,
+      
+      
+      # -----------------------------------------------------
+      # Cap relative humidity at 100%
+      #
+      # GridMET's rmax layer is model-derived (not a direct
+      # measurement), so area-weighted means can come out
+      # slightly above 100% (e.g., 100.2%) even though relative
+      # humidity is physically capped at 100%. This matters
+      # because weathermetrics::heat.index() treats ANY rh > 100
+      # as an "impossible value" and silently sets heat index to
+      # NA for that row -- so without this fix, days that are
+      # effectively saturated (rh == 100) can end up dropped as
+      # NA instead of getting a valid heat index. Clamping to
+      # [0, 100] here keeps those rows and calculates heat index
+      # correctly.
+      # -----------------------------------------------------
+      
+      rh =
+        pmin(
+          pmax(
+            rh,
+            0
+          ),
+          100
+        ),
+      
+      
+      # -----------------------------------------------------
+      # Calculate Heat Index
+      # NOTE: weathermetrics::heat.index() has its own internal
+      # "round" argument, which defaults to round = 1. If left
+      # at the default, the value is truncated to 1 decimal
+      # place *inside* the function, before it ever reaches the
+      # outer round() call below -- so the outer rounding can't
+      # recover the lost precision. To get a true 2-decimal-place
+      # result, we tell heat.index() itself to keep 2 decimals,
+      # and match the outer round() to the same precision.
+      #
+      # Because this is built from tmmx (daily maximum
+      # temperature) and rmax (daily maximum relative humidity),
+      # this heat index represents each ZCTA's daily MAX heat
+      # index.
+      # -----------------------------------------------------
+      
+      heat_index_c =
+        round(
+          heat.index(
+            t = tmax_c,
+            rh = rh,
+            temperature.metric = "celsius",
+            round = 2
+          ),
+          digits = 2
+        ),
+      
+      
+      # -----------------------------------------------------
+      # Add year
+      # -----------------------------------------------------
+      
+      year = year
+      
+    ) %>%
+    
+    
+    # =======================================================
+    # Keep final variables
+    # =======================================================
+    
+    select(
+      ZCTA,
+      date,
+      year,
+      tmax_c,
+      rh,
+      heat_index_c
+    )
+  
+  
+  return(
+    output
+  )
+}
+
+
+# ===========================================================
+# 11. Run all years
+# ===========================================================
+
+message(
+  "Starting processing for ",
+  length(target_zctas),
+  " ZCTAs (",
+  paste(
+    states_of_interest,
+    collapse = ", "
+  ),
+  ") and years ",
+  min(years),
+  "-",
+  max(years)
+)
+
+
+target_zcta_heat_index <-
+  
+  map_dfr(
+    years,
+    process_year
+  )
+
+
+# ===========================================================
+# 12. Make sure ZCTA remains character, attach state
+# ===========================================================
+
+target_zcta_heat_index$ZCTA <-
+  as.character(
+    target_zcta_heat_index$ZCTA
+  )
+
+target_zcta_heat_index <-
+  target_zcta_heat_index %>%
+  left_join(
+    zcta_state_lookup_final,
+    by = "ZCTA"
+  ) %>%
+  relocate(
+    STATE,
+    .after = ZCTA
+  )
+
+
+# ===========================================================
+# 13. Save as RDS
+# ===========================================================
+
+saveRDS(
+  target_zcta_heat_index,
+  file.path(
+    raster_dir,
+    "ny_ct_nj_zcta_heat_index_2024.rds"
+  )
+)
+
+
+# ===========================================================
+# 14. Save as CSV
+# ===========================================================
+
+write.csv(
+  target_zcta_heat_index,
+  file.path(
+    raster_dir,
+    "ny_ct_nj_zcta_heat_index_2024.csv"
+  ),
+  row.names = FALSE
+)
+
+```
+
+

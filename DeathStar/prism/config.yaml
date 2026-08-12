@@ -20,6 +20,12 @@ prism:
   # Resolution label used in folder names
   resolution: "25m"
 
+# Geography vintages (§1 of PLAN_county_cz_panels.md) — fixed snapshots applied
+# across the whole 2010-2026 window. Single source of truth for county_meta.csv
+# and cz_meta.csv geo_vintage columns.
+geo_vintage: "cb_2024"
+cz_vintage:  "czone_2020"
+
 commuting_zones:
   # Texas FIPS code
   state_fips: "48"
@@ -36,13 +42,40 @@ commuting_zones:
   # Local county shapefile directory
   county_shp: "Z:/ek559/DeathStar/raw_data/admin_boundaries/cb_2024_us_county_500k/cb_2024_us_county_500k.shp"
 
+counties:
+  # Texas FIPS code
+  state_fips: "48"
+
+  # Where to save county polygon file
+  shp_dir: "Z:/ek559/DeathStar/intermediate_data/county_shapefiles"
+
+  # Census cartographic boundary vintage used
+  vintage: 2024
+
+  # Local crosswalk file (county FIPS -> CZ), same source as commuting_zones
+  crosswalk: "Z:/ek559/DeathStar/raw_data/commuting-zones-2020.csv"
+
+  # Local county shapefile directory, same source as commuting_zones
+  county_shp: "Z:/ek559/DeathStar/raw_data/admin_boundaries/cb_2024_us_county_500k/cb_2024_us_county_500k.shp"
+
 output:
   # Intermediate per-year extraction CSVs
   extracted_dir: "Z:/ek559/DeathStar/intermediate_data/extracted"
 
-  # Final panel dataset
+  # Intermediate per-year county extraction CSVs
+  extracted_county_dir: "Z:/ek559/DeathStar/intermediate_data/extracted_county"
+
+  # Final CZ panel dataset (derived from county panel)
   panel_csv:     "Z:/ek559/DeathStar/clean_data/tx_cz_daily_weather.csv"
   panel_parquet: "Z:/ek559/DeathStar/clean_data/tx_cz_daily_weather.parquet"
+
+  # Final county panel dataset
+  county_panel_csv:     "Z:/ek559/DeathStar/clean_data/tx_county_daily_weather.csv"
+  county_panel_parquet: "Z:/ek559/DeathStar/clean_data/tx_county_daily_weather.parquet"
+
+  # Metadata / crosswalk files
+  county_meta_csv: "Z:/ek559/DeathStar/clean_data/county_meta.csv"
+  cz_meta_csv:     "Z:/ek559/DeathStar/clean_data/cz_meta.csv"
 
   # Coordinate reference system for spatial operations
   crs: "EPSG:4326"

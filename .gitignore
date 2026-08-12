@@ -18,3 +18,9 @@ Rplots.pdf
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
 **/.claude/settings.local.json
+
+# Nested separate git repository — tracked in its own history
+my-project/
+
+# Transient pipeline run/retry logs
+DeathStar/prism/logs/
