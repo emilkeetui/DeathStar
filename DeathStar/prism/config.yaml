@@ -79,3 +79,33 @@ output:
 
   # Coordinate reference system for spatial operations
   crs: "EPSG:4326"
+
+# ============================================================
+# ZCTA x day panel (PLAN_zcta_panel.md) — additive pipeline,
+# does not touch any key above. PRISM 800m instead of 4km.
+# ============================================================
+
+prism800:
+  base_url:   "https://services.nacse.org/prism/data/get/us/800m"
+  clip_dir:   "Z:/ek559/DeathStar/prism_raw_800m_tx"
+  variables:  [tmax, tmin, tmean, tdmean]
+  start_date: "2010-01-01"
+  end_date:   "2026-03-17"
+  tx_bbox:    [-106.75, 25.75, -93.4, 36.6]   # xmin, ymin, xmax, ymax (EPSG:4269)
+  request_sleep_sec: 2
+
+zcta:
+  shp_dir: "Z:/ek559/DeathStar/intermediate_data/zcta_shapefiles"
+  eras:
+    - {name: zcta510, start: "2010-01-01", end: "2019-12-31",
+       url: "https://www2.census.gov/geo/tiger/GENZ2019/shp/cb_2019_us_zcta510_500k.zip",
+       id_col: "ZCTA5CE10"}
+    - {name: zcta520, start: "2020-01-01", end: "2026-03-17",
+       url: "https://www2.census.gov/geo/tiger/GENZ2020/shp/cb_2020_us_zcta520_500k.zip",
+       id_col: "ZCTA5CE20"}
+
+output_zcta:
+  extracted_zcta_dir:  "Z:/ek559/DeathStar/intermediate_data/extracted_zcta"
+  zcta_panel_csv:      "Z:/ek559/DeathStar/clean_data/tx_zcta_daily_weather.csv"
+  zcta_panel_parquet:  "Z:/ek559/DeathStar/clean_data/tx_zcta_daily_weather.parquet"
+  zcta_meta_csv:       "Z:/ek559/DeathStar/clean_data/zcta_meta.csv"
