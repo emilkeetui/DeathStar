@@ -139,10 +139,11 @@ if COUNTY_PANEL.exists():
     county["fips"] = county["fips"].astype(str)
     county["date"] = pd.to_datetime(county["date"])
 
-    zcta_valid = zcta.dropna(subset=["tmax", "area_km2", "county_fips"])
+    zcta_valid = zcta.dropna(subset=["tmax", "area_km2", "county_fips"]).copy()
+    zcta_valid["county_fips"] = zcta_valid["county_fips"].astype(int).astype(str)
     rollup = (
         zcta_valid.groupby(["county_fips", "date"])
-        .apply(lambda g: np.average(g["tmax"], weights=g["area_km2"]))
+        .apply(lambda g: np.average(g["tmax"], weights=g["area_km2"]), include_groups=False)
         .reset_index(name="tmax_from_zcta")
     )
     rollup = rollup.rename(columns={"county_fips": "fips"})
